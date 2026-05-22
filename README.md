@@ -12,8 +12,8 @@
 ## 编译
 
 ```bash
-go build -o exp-active exp-active.go
-go build -o exp-passive exp-passive.go
+go build -tags active -o exp-active arp_common.go exp-active.go
+go build -tags passive -o exp-passive arp_common.go exp-passive.go
 ```
 
 ## 运行参数
