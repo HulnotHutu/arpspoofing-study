@@ -4,30 +4,40 @@
 
 ## 文件说明
 
-- `exp.go`：主动向指定目标发送伪造 ARP reply，并在退出时尝试恢复目标 ARP 缓存。
-- `exp.c`：监听指定网卡上的 ARP request，并在匹配目标条件时发送 ARP reply。
+- `exp-active.go`：主动向指定目标发送伪造 ARP reply，并在退出时尝试恢复目标 ARP 缓存。
+- `exp-passive.go`：监听指定网卡上的 ARP request，并在匹配目标条件时发送 ARP reply。
+- `exp.c`：C 语言版本的被动 ARP reply 实验程序。
 - `arp.txt`：RFC 826 文档，用于对照 ARP 字段定义。
 
 ## 编译
 
 ```bash
-go build -o exp-go exp.go
+go build -o exp-active exp-active.go
+go build -o exp-passive exp-passive.go
 ```
 
 ## 运行参数
 
+主动版本会周期性向目标发送伪造 ARP reply：
+
 ```bash
-sudo ./exp-go <interface> <victim_ip> <spoofed_ip> [victim_mac spoofed_mac]
+sudo ./exp-active <interface> <victim_ip> <spoofed_ip> [victim_mac spoofed_mac]
+```
+
+被动版本只在捕获到目标 ARP request 时才回复：
+
+```bash
+sudo ./exp-passive <interface> <victim_ip> <spoofed_ip>
 ```
 
 参数含义：
 
-- `<interface>`：发送 ARP 报文的网卡名。
-- `<victim_ip>`：接收伪造 ARP reply 的实验目标主机 IP。
+- `<interface>`：监听和发送 ARP 报文的网卡名。
+- `<victim_ip>`：实验目标主机 IP。
 - `<spoofed_ip>`：在 ARP reply 中被声明为本机 MAC 对应的 IP，常见实验场景是网关 IP。
-- `[victim_mac spoofed_mac]`：可选参数；不提供时程序会通过 ARP 自动解析，提供时直接使用指定 MAC。
+- `[victim_mac spoofed_mac]`：主动版本的可选参数；不提供时程序会通过 ARP 自动解析，提供时直接使用指定 MAC。
 
-程序需要 root 权限，或具备 `CAP_NET_RAW` 能力。停止实验时使用 `Ctrl+C`，程序会尝试发送真实映射恢复目标 ARP 缓存。
+程序需要 root 权限，或具备 `CAP_NET_RAW` 能力。主动版本停止实验时使用 `Ctrl+C`，程序会尝试发送真实映射恢复目标 ARP 缓存。
 
 ## ARP 欺骗原理
 
