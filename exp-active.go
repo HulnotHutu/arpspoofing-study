@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"os"
 	"os/signal"
@@ -86,20 +87,24 @@ func run(ifname, victimIPStr, spoofedIPStr, victimMACStr, spoofedMACStr string) 
 }
 
 func main() {
-	if len(os.Args) != 4 && len(os.Args) != 6 {
-		fmt.Fprintf(os.Stderr, "Usage: %s <interface> <victim_ip> <spoofed_ip> [victim_mac spoofed_mac]\n", os.Args[0])
-		fmt.Fprintf(os.Stderr, "Example: sudo %s eth0 192.168.56.101 192.168.56.1\n", os.Args[0])
+	var ifname, victimIP, spoofedIP, victimMAC, spoofedMAC string
+	flag.StringVar(&ifname, "i", "", "network interface")
+	flag.StringVar(&victimIP, "v", "", "victim IPv4 address")
+	flag.StringVar(&victimIP, "victim", "", "victim IPv4 address")
+	flag.StringVar(&spoofedIP, "s", "", "spoofed IPv4 address")
+	flag.StringVar(&spoofedIP, "spoof", "", "spoofed IPv4 address")
+	flag.StringVar(&victimMAC, "vm", "", "victim MAC address")
+	flag.StringVar(&victimMAC, "victim-mac", "", "victim MAC address")
+	flag.StringVar(&spoofedMAC, "sm", "", "real MAC address of spoofed IP")
+	flag.StringVar(&spoofedMAC, "spoof-mac", "", "real MAC address of spoofed IP")
+	flag.Parse()
+
+	if ifname == "" || victimIP == "" || spoofedIP == "" {
+		flag.Usage()
 		os.Exit(1)
 	}
 
-	victimMAC := ""
-	spoofedMAC := ""
-	if len(os.Args) == 6 {
-		victimMAC = os.Args[4]
-		spoofedMAC = os.Args[5]
-	}
-
-	if err := run(os.Args[1], os.Args[2], os.Args[3], victimMAC, spoofedMAC); err != nil {
+	if err := run(ifname, victimIP, spoofedIP, victimMAC, spoofedMAC); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}

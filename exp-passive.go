@@ -3,6 +3,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"os"
 
@@ -58,13 +59,20 @@ func run(ifname, victimIPStr, spoofedIPStr string) error {
 }
 
 func main() {
-	if len(os.Args) != 4 {
-		fmt.Fprintf(os.Stderr, "Usage: %s <interface> <victim_ip> <spoofed_ip>\n", os.Args[0])
-		fmt.Fprintf(os.Stderr, "Example: sudo %s eth0 192.168.56.101 192.168.56.1\n", os.Args[0])
+	var ifname, victimIP, spoofedIP string
+	flag.StringVar(&ifname, "i", "", "network interface")
+	flag.StringVar(&victimIP, "v", "", "victim IPv4 address")
+	flag.StringVar(&victimIP, "victim", "", "victim IPv4 address")
+	flag.StringVar(&spoofedIP, "s", "", "spoofed IPv4 address")
+	flag.StringVar(&spoofedIP, "spoof", "", "spoofed IPv4 address")
+	flag.Parse()
+
+	if ifname == "" || victimIP == "" || spoofedIP == "" {
+		flag.Usage()
 		os.Exit(1)
 	}
 
-	if err := run(os.Args[1], os.Args[2], os.Args[3]); err != nil {
+	if err := run(ifname, victimIP, spoofedIP); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}

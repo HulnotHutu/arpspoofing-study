@@ -21,21 +21,21 @@ go build -tags passive -o exp-passive arp_common.go exp-passive.go
 主动版本会周期性向目标发送伪造 ARP reply：
 
 ```bash
-sudo ./exp-active <interface> <victim_ip> <spoofed_ip> [victim_mac spoofed_mac]
+sudo ./exp-active -i <interface> -v <victim_ip> -s <spoofed_ip> [-vm <victim_mac> -sm <spoofed_mac>]
 ```
 
 被动版本只在捕获到目标 ARP request 时才回复：
 
 ```bash
-sudo ./exp-passive <interface> <victim_ip> <spoofed_ip>
+sudo ./exp-passive -i <interface> -v <victim_ip> -s <spoofed_ip>
 ```
 
 参数含义：
 
-- `<interface>`：监听和发送 ARP 报文的网卡名。
-- `<victim_ip>`：实验目标主机 IP。
-- `<spoofed_ip>`：在 ARP reply 中被声明为本机 MAC 对应的 IP，常见实验场景是网关 IP。
-- `[victim_mac spoofed_mac]`：主动版本的可选参数；不提供时程序会通过 ARP 自动解析，提供时直接使用指定 MAC。
+- `-i`：监听和发送 ARP 报文的网卡名。
+- `-v` / `-victim`：实验目标主机 IP。
+- `-s` / `-spoof`：在 ARP reply 中被声明为本机 MAC 对应的 IP，常见实验场景是网关 IP。
+- `-vm` / `-victim-mac`、`-sm` / `-spoof-mac`：主动版本的可选参数；不提供时程序会通过 ARP 自动解析，提供时直接使用指定 MAC。
 
 程序需要 root 权限，或具备 `CAP_NET_RAW` 能力。主动版本停止实验时使用 `Ctrl+C`，程序会尝试发送真实映射恢复目标 ARP 缓存。
 
