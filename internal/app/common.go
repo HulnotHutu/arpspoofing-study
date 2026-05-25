@@ -1,4 +1,4 @@
-package arpapp
+package app
 
 import (
 	"fmt"
@@ -45,4 +45,12 @@ func ParseIPv4(s string) (netip.Addr, error) {
 		return netip.Addr{}, fmt.Errorf("invalid IPv4 address: %s", s)
 	}
 	return ip, nil
+}
+
+func ParseMAC(s string) (net.HardwareAddr, error) {
+	mac, err := net.ParseMAC(s)
+	if err != nil {
+		return nil, fmt.Errorf("invalid MAC address: %s", s)
+	}
+	return mac, nil
 }

