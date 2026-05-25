@@ -21,7 +21,8 @@ var (
 )
 
 // captureARP 监听 ARP 请求并记录发送方到 macTable
-func captureARP(ctx context.Context, client *arp.Client, point app.Endpoint) {
+func captureARP(ctx context.Context, wg *sync.WaitGroup, client *arp.Client, point app.Endpoint) {
+	defer wg.Done()
 	for {
 		packet, _, err := client.Read()
 		if err != nil {
@@ -81,8 +82,10 @@ func run(ifname, spoofedIPStr string) error {
 	fmt.Printf("[*] Listening for ARP requests on %s...\n", ifname)
 
 	// Producer: 后台捕获 ARP 包，记录到 macTable
+	var wg sync.WaitGroup
 	endpoint := app.Endpoint{IP: spoofedIP, MAC: iface.HardwareAddr}
-	go captureARP(ctx, client, endpoint)
+	wg.Add(1)
+	go captureARP(ctx, &wg, client, endpoint)
 
 	// Consumer: 定时遍历 macTable，向所有已知主机发送 ARP Reply
 	ticker := time.NewTicker(3 * time.Second)
@@ -120,13 +123,11 @@ func run(ifname, spoofedIPStr string) error {
 			mu.Unlock()
 		case <-ctx.Done():
 			fmt.Println("\n[*] Exiting")
-			// 打印最终的 macTable
+			wg.Wait()
 			fmt.Println("[*] Final ARP table:")
-			mu.Lock()
 			for ip, mac := range macTable {
 				fmt.Printf("    %s -> %s\n", ip, mac)
 			}
-			mu.Unlock()
 			return nil
 		}
 	}
