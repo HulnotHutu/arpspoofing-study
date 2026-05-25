@@ -120,6 +120,13 @@ func run(ifname, spoofedIPStr string) error {
 			mu.Unlock()
 		case <-ctx.Done():
 			fmt.Println("\n[*] Exiting")
+			// 打印最终的 macTable
+			fmt.Println("[*] Final ARP table:")
+			mu.Lock()
+			for ip, mac := range macTable {
+				fmt.Printf("    %s -> %s\n", ip, mac)
+			}
+			mu.Unlock()
 			return nil
 		}
 	}
