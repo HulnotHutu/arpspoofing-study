@@ -6,10 +6,12 @@
 
 - `cmd/exp-active`：主动向指定目标发送伪造 ARP reply。
 - `cmd/exp-passive`：监听指定网卡上的 ARP request，并在匹配目标条件时发送 ARP reply。
-- `internal/arpapp`：Go 版本共用的网卡和 IPv4 解析逻辑。
-- `legacy/exp.c`：C 语言版本的被动 ARP reply 实验程序。
+- `internal/app`：Go 版本共用的网卡和 IPv4 解析逻辑。
+- `legacy/exp.c`：C 语言版本的被动 ARP reply 实验程序，但是可能存在问题。
 - `docs/arp.txt`：RFC 826 文档，用于对照 ARP 字段定义。
 - `docs/rfc5227.txt`：IPv4 Address Conflict Detection 相关 RFC 文档。
+- `docs/arpspoofing.md`：实验原理报告。
+- `ensp-topu\arpspoof.zip`: ensp 的拓扑
 
 ## 编译
 
