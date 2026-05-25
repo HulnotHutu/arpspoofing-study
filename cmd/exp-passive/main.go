@@ -123,6 +123,7 @@ func run(ifname, spoofedIPStr string) error {
 			mu.Unlock()
 		case <-ctx.Done():
 			fmt.Println("\n[*] Exiting")
+			client.Close() // 中断 captureARP 的阻塞 Read()
 			wg.Wait()
 			fmt.Println("[*] Final ARP table:")
 			for ip, mac := range macTable {
