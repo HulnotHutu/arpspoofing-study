@@ -13,12 +13,27 @@
 - `docs/arpspoofing.md`：实验原理报告。
 - `ensp-topu\arpspoof.zip`: ensp 的拓扑
 
+### 跨平台构建
+
+Linux 下使用 `github.com/mdlayher/arp`（原始套接字），Windows 下使用 `github.com/google/gopacket` + Npcap，通过 `//go:build windows` / `//go:build !windows` 标签自动选择实现：
+
+```
+cmd/exp-passive/main.go           //go:build !windows
+cmd/exp-passive/passive_windows.go //go:build windows
+cmd/exp-active/main.go             //go:build !windows
+cmd/exp-active/active_windows.go   //go:build windows
+internal/app/pcap_windows.go       //go:build windows — Npcap 设备查找
+internal/app/common.go             — 共享的 ARP 帧构造器
+```
+
 ## 编译
 
 ```bash
 go build -o exp-active ./cmd/exp-active
 go build -o exp-passive ./cmd/exp-passive
 ```
+
+编译时自动根据操作系统选择对应实现，无需手动指定构建标签。
 
 ## 运行参数
 
@@ -40,7 +55,12 @@ sudo ./exp-passive -i <interface> -s <spoofed_ip>
 - `-t`：主动版本的目标主机 IPv4 地址。
 - `-s`：在 ARP reply 中被声明为本机 MAC 对应的 IPv4 地址，常见实验场景是网关 IP。
 
-程序需要 root 权限，或具备 `CAP_NET_RAW` 能力。主动版本停止实验时使用 `Ctrl+C`。
+程序需要对应平台的特权：
+
+- **Linux**：root 权限，或具备 `CAP_NET_RAW` 能力。
+- **Windows**：以管理员身份运行，并安装 [Npcap](https://npcap.com)（安装时勾选 "WinPcap API Compatible Mode"）。
+
+主动版本停止实验时使用 `Ctrl+C`。
 
 ## ARP 欺骗原理
 
